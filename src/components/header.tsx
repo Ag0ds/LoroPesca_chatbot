@@ -1,10 +1,12 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useRef, useEffect } from "react"
+import type React from "react"
+
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Menu, X, Bot, MessageSquareMore, Send } from 'lucide-react'
+import { Menu, X, Bot, MessageSquareMore, Send } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { supabase } from "@/lib/supabase"
 
 export default function Header() {
@@ -23,30 +25,53 @@ export default function Header() {
   const [liveChatMessages, setLiveChatMessages] = useState([])
   const [isLiveChatLoading, setIsLiveChatLoading] = useState(true)
 
+  const botMessagesEndRef = useRef<HTMLDivElement>(null)
+  const liveMessagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Função para rolar até o final das mensagens do bot
+  const scrollBotToBottom = () => {
+    if (botMessagesEndRef.current) {
+      botMessagesEndRef.current.scrollIntoView({ behavior: "smooth" })
+    }
+  }
+
+  // Função para rolar até o final das mensagens do chat ao vivo
+  const scrollLiveToBottom = () => {
+    if (liveMessagesEndRef.current) {
+      liveMessagesEndRef.current.scrollIntoView({ behavior: "smooth" })
+    }
+  }
+
   // Carrega mensagens antigas do Supabase
   useEffect(() => {
     if (isLiveChatOpen) {
       const fetchMessages = async () => {
         setIsLiveChatLoading(true)
         try {
-          const { data, error } = await supabase
-            .from("messages")
-            .select("*")
-            .order("created_at", { ascending: true })
-          
+          const { data, error } = await supabase.from("messages").select("*").order("created_at", { ascending: true })
+
           if (error) throw error
-          
+
           // Formatar as mensagens para o formato usado pelo chat
-          const formattedMessages = data.map(msg => ({
+          const formattedMessages = data.map((msg) => ({
             id: msg.id,
             sender: msg.sender,
             text: msg.content,
             time: new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }))
-          
+
           setLiveChatMessages(formattedMessages)
         } catch (error) {
           console.error("Erro ao carregar mensagens:", error)
+          // Usar dados de fallback em caso de erro
+          setLiveChatMessages([
+            {
+              id: 1,
+              sender: "atendente",
+              text: "Olá! Bem-vindo ao atendimento ao cliente. Como posso ajudar?",
+              time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            },
+          ])
         } finally {
           setIsLiveChatLoading(false)
         }
@@ -57,19 +82,15 @@ export default function Header() {
       // Escuta mensagens novas
       const subscription = supabase
         .channel("chat-room")
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "messages" },
-          (payload) => {
-            const newMsg = {
-              id: payload.new.id,
-              sender: payload.new.sender,
-              text: payload.new.content,
-              time: new Date(payload.new.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            }
-            setLiveChatMessages((prev) => [...prev, newMsg])
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+          const newMsg = {
+            id: payload.new.id,
+            sender: payload.new.sender,
+            text: payload.new.content,
+            time: new Date(payload.new.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }
-        )
+          setLiveChatMessages((prev) => [...prev, newMsg])
+        })
         .subscribe()
 
       return () => {
@@ -78,11 +99,11 @@ export default function Header() {
     }
   }, [isLiveChatOpen])
 
-  // Função para enviar mensagem do bot
-  const handleSendBotMessage = () => {
+  // Enviar a mensagem para a IA do Gemini 2.0 Flash
+  const handleSendBotMessage = async () => {
     if (!botMessage.trim()) return
 
-    // Adicionar mensagem do usuário
+    // Adicionar a mensagem do usuário ao histórico
     const userMessage = {
       sender: "user",
       text: botMessage,
@@ -90,17 +111,38 @@ export default function Header() {
     }
 
     setBotChatMessages([...botChatMessages, userMessage])
-    setBotMessage("")
+    const currentBotMessage = botMessage
+    setBotMessage("") // Limpa o campo de entrada
 
-    // Simular resposta do bot após um pequeno delay
-    setTimeout(() => {
+    try {
+      // Enviar mensagem para a API do chatbot
+      const response = await fetch("/api/chatbot", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userMessage: currentBotMessage }), // Passa a mensagem do usuário para a API
+      })
+
+      // Recebe a resposta da IA
+      const data = await response.json()
       const botMessage = {
         sender: "bot",
-        text: "Obrigado por sua mensagem! Um atendente entrará em contato em breve.",
+        text: data.response, // Resposta da IA
         time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       }
+
+      // Adicionar a resposta da IA ao histórico de mensagens
       setBotChatMessages((prev) => [...prev, botMessage])
-    }, 1000)
+    } catch (error) {
+      console.error("Erro ao comunicar com a API:", error)
+      const botMessage = {
+        sender: "bot",
+        text: "Desculpe, houve um erro ao processar sua solicitação.",
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      }
+      setBotChatMessages((prev) => [...prev, botMessage]) // Mensagem de erro do bot
+    }
   }
 
   // Função para enviar mensagem do chat ao vivo
@@ -111,13 +153,13 @@ export default function Header() {
       // Enviar mensagem para o Supabase
       await supabase.from("messages").insert({
         content: liveMessage,
-        sender: "cliente" // ou 'atendente' dependendo de quem está usando
+        sender: "cliente", // ou 'atendente' dependendo de quem está usando
       })
-      
+
       setLiveMessage("")
     } catch (error) {
       console.error("Erro ao enviar mensagem:", error)
-      
+
       // Fallback em caso de erro - mostrar a mensagem localmente
       const userMessage = {
         id: Date.now(),
@@ -131,21 +173,21 @@ export default function Header() {
   }
 
   // Funções para lidar com tecla Enter
-  const handleBotKeyDown = (e) => {
+  const handleBotKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       handleSendBotMessage()
     }
   }
 
-  const handleLiveKeyDown = (e) => {
+  const handleLiveKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       handleSendLiveMessage()
     }
   }
 
   // Função para alternar entre os chats
-  const toggleChat = (chatType) => {
-    if (chatType === 'bot') {
+  const toggleChat = (chatType: "bot" | "live") => {
+    if (chatType === "bot") {
       setIsBotChatOpen(!isBotChatOpen)
       setIsLiveChatOpen(false)
     } else {
@@ -153,6 +195,19 @@ export default function Header() {
       setIsBotChatOpen(false)
     }
   }
+
+  // Rolagem automática quando as mensagens são atualizadas
+  useEffect(() => {
+    if (isBotChatOpen) {
+      scrollBotToBottom()
+    }
+  }, [botChatMessages, isBotChatOpen])
+
+  useEffect(() => {
+    if (isLiveChatOpen) {
+      scrollLiveToBottom()
+    }
+  }, [liveChatMessages, isLiveChatOpen])
 
   return (
     <>
@@ -191,7 +246,7 @@ export default function Header() {
                 variant="ghost"
                 size="icon"
                 className="text-blue-700 hover:text-blue-500 hover:bg-blue-50"
-                onClick={() => toggleChat('bot')}
+                onClick={() => toggleChat("bot")}
               >
                 <Bot size={20} />
                 <span className="sr-only">Bot</span>
@@ -200,11 +255,11 @@ export default function Header() {
                 variant="ghost"
                 size="icon"
                 className="text-blue-700 hover:text-blue-500 hover:bg-blue-50 relative"
-                onClick={() => toggleChat('live')}
+                onClick={() => toggleChat("live")}
               >
                 <MessageSquareMore size={20} />
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center">
-                  {liveChatMessages.filter(m => m.sender === 'atendente' && !m.read).length || ''}
+                  {liveChatMessages.filter((m) => m.sender === "atendente" && !m.read).length || ""}
                 </span>
                 <span className="sr-only">Bate papo</span>
               </Button>
@@ -289,10 +344,11 @@ export default function Header() {
                 </div>
               </div>
             ))}
+            <div ref={botMessagesEndRef} /> {/* Elemento para rolagem automática */}
           </div>
 
           {/* Chat Input */}
-          <div className="border-t border-gray-200 p-3 flex gap-2">
+          <div className="border-t border-gray-200 p-3 flex gap-2 text-blue-500">
             <Input
               placeholder="Digite sua mensagem..."
               value={botMessage}
@@ -357,7 +413,9 @@ export default function Header() {
                       </div>
                     )}
                     <p className="text-sm">{msg.text}</p>
-                    <span className={`text-xs ${msg.sender === "cliente" ? "text-green-100" : "text-gray-500"} block mt-1`}>
+                    <span
+                      className={`text-xs ${msg.sender === "cliente" ? "text-green-100" : "text-gray-500"} block mt-1`}
+                    >
                       {msg.time}
                     </span>
                   </div>
@@ -368,6 +426,7 @@ export default function Header() {
                 <p>Nenhuma mensagem ainda. Inicie uma conversa!</p>
               </div>
             )}
+            <div ref={liveMessagesEndRef} /> {/* Elemento para rolagem automática */}
           </div>
 
           {/* Chat Input */}
@@ -377,7 +436,7 @@ export default function Header() {
               value={liveMessage}
               onChange={(e) => setLiveMessage(e.target.value)}
               onKeyDown={handleLiveKeyDown}
-              className="flex-1"
+              className="flex-1 text-green-500"
             />
             <Button
               size="icon"
@@ -393,4 +452,3 @@ export default function Header() {
     </>
   )
 }
-

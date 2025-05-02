@@ -11,12 +11,21 @@ export async function POST(req) {
   try {
     // Consultar o banco de dados para obter os produtos
     const products = await prisma.products.findMany();
+
+    // Consultar as especificações técnicas dos produtos
+    const technicalSpecs = await prisma.technical_specs.findMany();
+
+    // Criação de um contexto para a IA com base nos produtos e especificações
+    let productDetails = "Quero que você responda os usuários baseado nesses produtos e suas especificações técnicas. Aqui estão os produtos da loja:\n";
     
-    // Criação de um contexto para a IA com base nos produtos
-    let productDetails = "Quero que você responda os usuários baseado nesses produtos. Aqui estão os produtos da loja:\n";
     products.forEach((product) => {
-      productDetails += `Produto: ${product.product_name}, Preço: R$${product.price}, Disponibilidade: ${product.availability}\n`;
+      const spec = technicalSpecs.find((spec) =>
+        product.product_name.toLowerCase().includes(spec.product_group.toLowerCase())
+      );
+    
+      productDetails += `Produto: ${product.product_name}, Preço: R$${product.price}, Disponibilidade: ${product.availability}, Especificações: ${spec ? spec.technical_details : "Sem especificações"}\n`;
     });
+    
 
     // Incluir a mensagem do usuário no contexto
     const prompt = `${productDetails}\nUsuário: ${userMessage}\nResponda de forma útil.`;
