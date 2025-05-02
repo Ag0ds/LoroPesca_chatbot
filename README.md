@@ -86,7 +86,7 @@ _Observação:_
 ![Funcionamento do chatbot](https://github.com/user-attachments/assets/b01e12e0-2e21-4866-a691-e646a143a08b)
 
 
-Vídeo Apresentação do projeto -> https://drive.google.com/uc?id=1cjdz2Hf9M2rxSHcayqYo7_sw4VHYzy1s&export=download
+Vídeo Apresentação do projeto -> [(https://drive.google.com/file/d/1cjdz2Hf9M2rxSHcayqYo7_sw4VHYzy1s/view?usp=sharing)](https://drive.google.com/file/d/1cjdz2Hf9M2rxSHcayqYo7_sw4VHYzy1s/view?usp=sharing)
 
 
 
