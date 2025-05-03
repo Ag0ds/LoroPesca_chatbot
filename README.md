@@ -32,8 +32,8 @@ Ele apresenta um catálogo completo da loja, além de uma aba com detalhes técn
 ### 1. Clone o repositório
 
   - bash
-```git clone https://github.com/seu-usuario/chat-supabase-nextjs.git```
-```cd chat-supabase-nextjs```
+```git clone https://github.com/Ag0ds/LoroPesca_chatbot.git```
+```cd LoroPesca_chatbot```
 
 2. **Instale as dependências**
    
